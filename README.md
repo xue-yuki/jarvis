@@ -57,7 +57,7 @@ From: https://github.com/thewh1teagle/kokoro-onnx/releases
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/yourusername/jarvis.git
+git clone https://github.com/xue-yuki/jarvis.git
 cd jarvis
 pip install -r requirements.txt
 ```
