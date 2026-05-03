@@ -1,0 +1,29 @@
+USER_NAME = "YourName"
+
+OPENROUTER_API_KEY = "sk-or-v1-..."
+OPENROUTER_MODEL = "qwen/qwen-turbo"
+
+ELEVENLABS_API_KEY = "sk_..."
+ELEVENLABS_VOICE_ID = "cgSgspJ2msm6clMCkdW9"  # Jessica
+
+EDGE_TTS_VOICE = "en-US-JennyNeural"
+
+NOTION_TOKEN = ""
+NOTION_DATABASE_ID = ""
+
+CLAP_THRESHOLD = 0.06
+CLAP_COOLDOWN = 0.15
+DOUBLE_CLAP_WINDOW = 0.8
+
+WHISPER_MODEL_SIZE = "medium"
+
+VAD_THRESHOLD = 0.02
+VAD_SILENCE_DURATION = 1.0
+VAD_MAX_DURATION = 20.0
+SAMPLE_RATE = 16000
+MIC_DEVICE = None
+
+LAUNCH_APPS = [
+    ["code"],
+    ["firefox", "https://open.spotify.com"],
+]

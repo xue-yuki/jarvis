@@ -1,0 +1,12 @@
+sounddevice
+numpy
+faster-whisper
+openai
+edge-tts
+pygame
+requests
+soundfile
+websockets
+pywebview
+kokoro-onnx
+ddgs

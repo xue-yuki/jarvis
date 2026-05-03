@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>JARVIS</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#000; overflow:hidden; font-family:'Courier New',monospace; user-select:none; }
+    canvas { display:block; position:fixed; top:0; left:0; z-index:0; }
+
+    body::after {
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:1;
+      background: repeating-linear-gradient(to bottom,
+        transparent 0px, transparent 3px, rgba(0,0,0,0.06) 3px, rgba(0,0,0,0.06) 4px);
+    }
+
+    #drag-bar {
+      position:fixed; top:0; left:0; right:0; height:38px;
+      cursor:grab; z-index:200;
+      display:flex; align-items:center; padding:0 14px; gap:7px;
+    }
+    #drag-bar:active { cursor:grabbing; }
+    #title-text {
+      font-size:9px; letter-spacing:6px; color:rgba(0,190,255,0.4);
+      text-transform:uppercase; flex:1; text-align:center; pointer-events:none;
+    }
+    .wbtn { width:11px; height:11px; border-radius:50%; cursor:pointer; flex-shrink:0; transition:opacity .2s; }
+    .wbtn:hover { opacity:.6; }
+    #btn-close { background:#ff5f57; }
+    #btn-min   { background:#febc2e; }
+
+    .corner {
+      position:fixed; width:20px; height:20px;
+      border-color:rgba(0,180,255,0.25); border-style:solid;
+      z-index:10; pointer-events:none; transition:border-color .5s;
+    }
+    #ctl { top:42px; left:12px;  border-width:1px 0 0 1px; }
+    #ctr { top:42px; right:12px; border-width:1px 1px 0 0; }
+    #cbl { bottom:10px; left:12px;  border-width:0 0 1px 1px; }
+    #cbr { bottom:10px; right:12px; border-width:0 1px 1px 0; }
+
+    #sys {
+      position:fixed; top:48px; left:18px;
+      font-size:7px; letter-spacing:2px; color:rgba(0,170,255,0.25);
+      line-height:2; z-index:20; pointer-events:none;
+    }
+    #clock {
+      position:fixed; top:48px; right:18px;
+      font-size:8px; letter-spacing:2px; color:rgba(0,170,255,0.25);
+      text-align:right; z-index:20; pointer-events:none; line-height:2;
+    }
+
+    #status-bar {
+      position:fixed; bottom:16px; left:0; right:0;
+      display:flex; align-items:center; justify-content:center; gap:9px;
+      z-index:20; pointer-events:none;
+    }
+    #dot { width:5px; height:5px; border-radius:50%; background:#0af; transition:background .4s; }
+    #dot.thinking { background:#f40; animation:pulse .25s infinite; }
+    #dot.listening { background:#4ff; animation:pulse 1s infinite; }
+    #dot.speaking  { background:#fff; animation:pulse .5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.15} }
+
+    #slabel {
+      font-size:8px; letter-spacing:5px; color:#0af;
+      text-transform:uppercase; transition:color .4s;
+    }
+
+    #chat {
+      position:fixed; bottom:42px; right:14px;
+      width:230px; max-height:320px;
+      display:flex; flex-direction:column; justify-content:flex-end;
+      gap:6px; overflow:hidden; z-index:20; pointer-events:none;
+      mask-image:linear-gradient(to bottom, transparent 0%, black 28%);
+    }
+    .msg { animation:fadeUp .3s ease forwards; }
+    .mrole { font-size:7px; letter-spacing:3px; margin-bottom:3px; opacity:.35; text-transform:uppercase; }
+    .mtext { font-size:11px; line-height:1.5; padding:6px 9px; border-radius:5px; word-break:break-word; }
+    .msg.user .mrole  { color:#0af; text-align:right; }
+    .msg.user .mtext  { background:rgba(0,160,255,.09); border:1px solid rgba(0,160,255,.18); color:#9df; text-align:right; border-bottom-right-radius:2px; }
+    .msg.jarvis .mrole { color:#8ef; }
+    .msg.jarvis .mtext { background:rgba(80,180,255,.06); border:1px solid rgba(80,180,255,.1); color:#def; border-bottom-left-radius:2px; }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+  </style>
+</head>
+<body>
+  <div id="drag-bar">
+    <div id="btn-close" class="wbtn"></div>
+    <div id="btn-min"   class="wbtn"></div>
+    <div id="title-text">J · A · R · V · I · S</div>
+  </div>
+  <div class="corner" id="ctl"></div>
+  <div class="corner" id="ctr"></div>
+  <div class="corner" id="cbl"></div>
+  <div class="corner" id="cbr"></div>
+  <div id="sys">SYS · ONLINE<br>NEURAL · ACTIVE<br>MIC · READY</div>
+  <div id="clock"></div>
+  <div id="status-bar"><div id="dot"></div><div id="slabel">STANDBY</div></div>
+  <div id="chat"></div>
+
+  <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}</script>
+  <script type="module">
+    import * as THREE from 'three';
+
+    const scene    = new THREE.Scene();
+    const camera   = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 100);
+    camera.position.z = 3.8;
+
+    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    // ── Build neural nodes ──
+    const N = 140;
+    const MAX_DIST = 0.82;
+    const nodes = [];
+
+    for (let i = 0; i < N; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi   = Math.acos(2 * Math.random() - 1);
+      const r     = 0.35 + Math.random() * 1.1;
+      const ox = r * Math.sin(phi) * Math.cos(theta);
+      const oy = r * Math.sin(phi) * Math.sin(theta);
+      const oz = r * Math.cos(phi);
+      nodes.push({
+        ox, oy, oz,
+        x: ox, y: oy, z: oz,
+        act: 0,          // activation 0..1
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.3 + Math.random() * 0.5,
+      });
+    }
+
+    // ── Build connections (nearby nodes only) ──
+    const conns = [];
+    for (let i = 0; i < N; i++) {
+      let cnt = 0;
+      for (let j = i+1; j < N && cnt < 6; j++) {
+        const dx = nodes[i].ox - nodes[j].ox;
+        const dy = nodes[i].oy - nodes[j].oy;
+        const dz = nodes[i].oz - nodes[j].oz;
+        const d  = Math.sqrt(dx*dx + dy*dy + dz*dz);
+        if (d < MAX_DIST) { conns.push({ i, j, d, act: 0 }); cnt++; }
+      }
+    }
+
+    // ── Node point cloud ──
+    const nodePosArr = new Float32Array(N * 3);
+    const nodeColArr = new Float32Array(N * 3);
+    const nodeGeo = new THREE.BufferGeometry();
+    nodeGeo.setAttribute('position', new THREE.BufferAttribute(nodePosArr, 3));
+    nodeGeo.setAttribute('color',    new THREE.BufferAttribute(nodeColArr, 3));
+    const nodeMat = new THREE.PointsMaterial({
+      size: 0.03, vertexColors: true,
+      transparent: true, opacity: 1,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    scene.add(new THREE.Points(nodeGeo, nodeMat));
+
+    // ── Connection lines ──
+    const linePosArr = new Float32Array(conns.length * 6);
+    const lineColArr = new Float32Array(conns.length * 6);
+    const lineGeo = new THREE.BufferGeometry();
+    lineGeo.setAttribute('position', new THREE.BufferAttribute(linePosArr, 3));
+    lineGeo.setAttribute('color',    new THREE.BufferAttribute(lineColArr, 3));
+    const lineMat = new THREE.LineBasicMaterial({
+      vertexColors: true, transparent: true, opacity: 1,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    scene.add(new THREE.LineSegments(lineGeo, lineMat));
+
+    // ── State ──
+    let state = 'idle', time = 0;
+    const slabel  = document.getElementById('slabel');
+    const dot     = document.getElementById('dot');
+    const corners = document.querySelectorAll('.corner');
+
+    const cfg = {
+      idle:     { label:'STANDBY',   color:'#0af', dot:'' },
+      listening:{ label:'LISTENING', color:'#4ff', dot:'listening' },
+      thinking: { label:'THINKING',  color:'#f84', dot:'thinking' },
+      speaking: { label:'SPEAKING',  color:'#fff', dot:'speaking' },
+    };
+
+    function setState(s) {
+      state = s;
+      const c = cfg[s] || cfg.idle;
+      slabel.textContent = c.label;
+      slabel.style.color = c.color;
+      dot.className = c.dot;
+      const bc = s==='thinking' ? 'rgba(255,80,0,.4)' :
+                 s==='speaking' ? 'rgba(255,255,255,.4)' :
+                 s==='listening'? 'rgba(64,255,255,.35)' :
+                                  'rgba(0,180,255,.22)';
+      corners.forEach(el => el.style.borderColor = bc);
+    }
+
+    // ── Chat ──
+    const chatEl = document.getElementById('chat');
+    function addMsg(role, text) {
+      const d = document.createElement('div');
+      d.className = `msg ${role}`;
+      d.innerHTML = `<div class="mrole">${role==='user'?'▸ YOU':'◈ JARVIS'}</div><div class="mtext">${text}</div>`;
+      chatEl.appendChild(d);
+      while (chatEl.children.length > 14) chatEl.removeChild(chatEl.firstChild);
+    }
+
+    // ── Clock ──
+    const clockEl = document.getElementById('clock');
+    setInterval(() => {
+      const n=new Date(), h=String(n.getHours()).padStart(2,'0'),
+            m=String(n.getMinutes()).padStart(2,'0'), s=String(n.getSeconds()).padStart(2,'0');
+      clockEl.innerHTML=`${h}:${m}:${s}<br>${n.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}`;
+    }, 1000);
+
+    // ── WebSocket ──
+    function connect() {
+      const ws = new WebSocket('ws://localhost:8765');
+      ws.onmessage = e => {
+        const d = JSON.parse(e.data);
+        if (d.type==='state') setState(d.state);
+        else if (d.type==='chat') addMsg(d.role, d.text);
+      };
+      ws.onclose = () => setTimeout(connect, 2000);
+    }
+    connect();
+
+    // ── Helpers ──
+    function lerpColor(r1,g1,b1, r2,g2,b2, t) {
+      return [r1+(r2-r1)*t, g1+(g2-g1)*t, b1+(b2-b1)*t];
+    }
+    // idle=dark blue, active=cyan, hot=red-orange
+    function nodeColor(act) {
+      if (act < 0.5) return lerpColor(0,.1,.25, 0,.5,.9, act*2);
+      return lerpColor(0,.5,.9, 1,.25,0, (act-.5)*2);
+    }
+
+    // ── Animate ──
+    function animate() {
+      requestAnimationFrame(animate);
+      time += 0.015;
+
+      // Random firing based on state
+      const fireRate = state==='thinking' ? 0.18 :
+                       state==='speaking' ? 0.08 :
+                       state==='listening'? 0.02 : 0.004;
+
+      if (Math.random() < fireRate) {
+        const pick = Math.floor(Math.random() * N);
+        nodes[pick].act = 1.0;
+      }
+
+      // Update node positions (gentle drift)
+      for (let i = 0; i < N; i++) {
+        const n = nodes[i];
+        const drift = (state==='thinking'||state==='speaking') ? 0.04 : 0.012;
+        n.x = n.ox + Math.sin(time * n.speed + n.phase)       * drift;
+        n.y = n.oy + Math.cos(time * n.speed * 0.8 + n.phase) * drift;
+        n.z = n.oz + Math.sin(time * n.speed * 0.6 + n.phase + 1) * drift;
+
+        // Decay
+        const decay = state==='thinking' ? 0.88 :
+                      state==='speaking' ? 0.92 : 0.96;
+        n.act *= decay;
+      }
+
+      // Propagate activation along connections
+      for (const c of conns) {
+        const ni = nodes[c.i], nj = nodes[c.j];
+        const strength = (1 - c.d / MAX_DIST) * 0.65;
+        if (ni.act > 0.25) nj.act = Math.max(nj.act, ni.act * strength);
+        if (nj.act > 0.25) ni.act = Math.max(ni.act, nj.act * strength);
+        // Connection own activation = max of its endpoints
+        c.act = Math.max(ni.act, nj.act);
+      }
+
+      // Update node geometry
+      for (let i = 0; i < N; i++) {
+        const n = nodes[i];
+        nodePosArr[i*3]=n.x; nodePosArr[i*3+1]=n.y; nodePosArr[i*3+2]=n.z;
+        const [r,g,b] = nodeColor(n.act);
+        nodeColArr[i*3]=r; nodeColArr[i*3+1]=g; nodeColArr[i*3+2]=b;
+      }
+      nodeGeo.attributes.position.needsUpdate = true;
+      nodeGeo.attributes.color.needsUpdate    = true;
+
+      // Update line geometry
+      for (let k = 0; k < conns.length; k++) {
+        const c  = conns[k];
+        const ni = nodes[c.i], nj = nodes[c.j];
+        linePosArr[k*6]   = ni.x; linePosArr[k*6+1] = ni.y; linePosArr[k*6+2] = ni.z;
+        linePosArr[k*6+3] = nj.x; linePosArr[k*6+4] = nj.y; linePosArr[k*6+5] = nj.z;
+
+        const [r,g,b] = nodeColor(c.act);
+        const alpha = 0.08 + c.act * 0.6;
+        lineColArr[k*6]   = r*alpha; lineColArr[k*6+1] = g*alpha; lineColArr[k*6+2] = b*alpha;
+        lineColArr[k*6+3] = r*alpha; lineColArr[k*6+4] = g*alpha; lineColArr[k*6+5] = b*alpha;
+      }
+      lineGeo.attributes.position.needsUpdate = true;
+      lineGeo.attributes.color.needsUpdate    = true;
+
+      // Slow rotate
+      const rotSpeed = state==='thinking' ? 0.006 :
+                       state==='speaking' ? 0.004 : 0.0012;
+      scene.rotation.y += rotSpeed;
+      scene.rotation.x  = Math.sin(time * 0.2) * 0.06;
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+  </script>
+
+  <script>
+    // ── Drag ──
+    const dragBar = document.getElementById('drag-bar');
+    let dragging = false, lastDragT = 0;
+
+    dragBar.addEventListener('mousedown', e => {
+      if (e.target.classList.contains('wbtn')) return;
+      dragging = true;
+      if (window.pywebview && pywebview.api)
+        pywebview.api.start_drag(e.screenX, e.screenY);
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging || !window.pywebview || !pywebview.api) return;
+      const now = Date.now();
+      if (now - lastDragT < 20) return;  // max ~50fps to avoid API flood
+      lastDragT = now;
+      pywebview.api.drag_to(e.screenX, e.screenY);
+    });
+    document.addEventListener('mouseup', () => { dragging = false; });
+    document.getElementById('btn-close').onclick = () => window.pywebview && pywebview.api.close();
+    document.getElementById('btn-min').onclick   = () => window.pywebview && pywebview.api.minimize();
+  </script>
+</body>
+</html>
